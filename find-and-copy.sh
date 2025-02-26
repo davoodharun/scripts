@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./find_and_copy.sh /path/to/search .yaml /destination/folder "/path/to/exclude,/another/path" [owning_team]
+# Usage: ./find_and_copy.sh /path/to/search .yaml /destination/folder [exclude_paths] [owning_team]
 
 if [ "$#" -lt 3 ]; then
     echo "Usage: $0 <source_directory> <file_extension> <destination_folder> [exclude_paths] [owning_team]"
@@ -10,8 +10,8 @@ fi
 SOURCE_DIR="$1"
 FILE_EXT="$2"
 DEST_DIR="$3"
-EXCLUDE_PATHS="$4"
-OWNING_TEAM="${5:-mma}"  # Default to "mma" if not provided
+EXCLUDE_PATHS="${4:-}"  # Optional
+OWNING_TEAM="${5:-mma}"  # Optional, default to "mma"
 
 # Ensure destination directory exists before calling realpath
 mkdir -p "$DEST_DIR"
@@ -20,7 +20,7 @@ if ! DEST_DIR="$(realpath "$DEST_DIR" 2>/dev/null)"; then
     DEST_DIR="$(cd "$DEST_DIR" && pwd)"
 fi
 
-# Process exclude paths into an array
+# Process exclude paths into an array if provided
 EXCLUDE_ARGS=()
 if [[ -n "$EXCLUDE_PATHS" ]]; then
     IFS=',' read -ra EXCLUDE_ARRAY <<< "$EXCLUDE_PATHS"
@@ -48,7 +48,14 @@ generate_unique_filename() {
 # Temporary file to store JSON entries
 JSON_TMP_FILE=$(mktemp)
 
-find "$SOURCE_DIR" "${EXCLUDE_ARGS[@]}" -type f -name "*$FILE_EXT" -print0 | while IFS= read -r -d '' file; do
+# Run find command with or without exclude paths
+if [[ -n "$EXCLUDE_PATHS" ]]; then
+    FIND_CMD=(find "$SOURCE_DIR" "${EXCLUDE_ARGS[@]}" -type f -name "*$FILE_EXT" -print0)
+else
+    FIND_CMD=(find "$SOURCE_DIR" -type f -name "*$FILE_EXT" -print0)
+fi
+
+"${FIND_CMD[@]}" | while IFS= read -r -d '' file; do
     original_name=$(basename "$file")
     base_name="${original_name%.*}"
     ext=".${original_name##*.}"
