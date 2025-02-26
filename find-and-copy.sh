@@ -13,16 +13,19 @@ DEST_DIR="$3"
 EXCLUDE_PATHS="$4"
 OWNING_TEAM="${5:-mma}"  # Default to "mma" if not provided
 
-SOURCE_DIR="$(realpath "$SOURCE_DIR")"
-DEST_DIR="$(realpath "$DEST_DIR")"
-
+# Ensure destination directory exists before calling realpath
 mkdir -p "$DEST_DIR"
+if ! DEST_DIR="$(realpath "$DEST_DIR" 2>/dev/null)"; then
+    echo "realpath failed, using manual absolute path"
+    DEST_DIR="$(cd "$DEST_DIR" && pwd)"
+fi
 
+# Process exclude paths into an array
 EXCLUDE_ARGS=()
 if [[ -n "$EXCLUDE_PATHS" ]]; then
     IFS=',' read -ra EXCLUDE_ARRAY <<< "$EXCLUDE_PATHS"
     for EXCLUDE_PATH in "${EXCLUDE_ARRAY[@]}"; do
-        EXCLUDE_PATH_ABS="$(realpath "$EXCLUDE_PATH")"
+        EXCLUDE_PATH_ABS="$(realpath "$EXCLUDE_PATH" 2>/dev/null || echo "$EXCLUDE_PATH")"
         EXCLUDE_ARGS+=(-path "$EXCLUDE_PATH_ABS" -prune -o)
     done
 fi
@@ -50,12 +53,15 @@ find "$SOURCE_DIR" "${EXCLUDE_ARGS[@]}" -type f -name "*$FILE_EXT" -print0 | whi
     base_name="${original_name%.*}"
     ext=".${original_name##*.}"
     new_name=$(generate_unique_filename "$base_name" "$ext")
+    new_file_path="$DEST_DIR/$new_name"
 
-    cp "$file" "$DEST_DIR/$new_name"
+    cp "$file" "$new_file_path"
 
-    # Add a commented line with the original path
-    if [[ "$FILE_EXT" =~ ^\.(txt|log|sh|py|js|html|md|csv|json|yaml|yml|xml|conf|ini)$ ]]; then
-        sed -i "1i # Copied from: $file" "$DEST_DIR/$new_name"
+    # Detect macOS and use appropriate `sed` syntax
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "1s|^|# Copied from: $file\n|" "$new_file_path"
+    else
+        sed -i "1i # Copied from: $file" "$new_file_path"
     fi
 
     # Determine JSON properties based on filename
@@ -87,7 +93,7 @@ find "$SOURCE_DIR" "${EXCLUDE_ARGS[@]}" -type f -name "*$FILE_EXT" -print0 | whi
 
     echo "$entry" >> "$JSON_TMP_FILE"
 
-    echo "Copied: $file -> $DEST_DIR/$new_name"
+    echo "Copied: $file -> $new_file_path"
 done
 
 # Build the final JSON file
